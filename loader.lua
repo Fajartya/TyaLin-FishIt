@@ -8,7 +8,10 @@
 -- at runtime, so a missing API produces a clear message instead of a stack
 -- trace.
 
-local SCRIPT_URL = "https://raw.githubusercontent.com/Fajartya/TyaLin-FishIt/refs/heads/main/dist/payload.lua"
+-- The canonical raw URL. The "/refs/heads/" variant is served from a
+-- separate cache by raw.githubusercontent.com and can keep an old payload
+-- alive for a while, so it is not used here.
+local SCRIPT_URL = "https://raw.githubusercontent.com/Fajartya/TyaLin-FishIt/main/dist/payload.lua"
 
 local function log(message)
     print("[TyaLin] " .. tostring(message))
