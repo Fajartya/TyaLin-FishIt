@@ -15,6 +15,15 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Fajartya/TyaLin-FishI
 
 - `loader.lua` — fetches and runs `dist/payload.lua`
 - `dist/payload.lua` — built artifact (minified, string encrypted)
+- `diag.lua` — shows download, compile and start results on screen
+
+## Menu does not appear?
+
+Run `diag.lua` and read the panel:
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Fajartya/TyaLin-FishIt/main/diag.lua"))()
+```
 
 The payload is downloaded and executed by the client, so anybody can copy it.
 Keep the meaningful checks on a server you control.
