@@ -1,83 +1,157 @@
 -- TyaLin transparent loader
 -- Fetches the built, obfuscated payload from the public repository.
+--
+-- Executor support:
+--   Delta, Fluxus, KRNL, Script-Ware, Synapse X, Arceus X, ...
+--
+-- The loader only needs an HTTP function and loadstring. Both are looked up
+-- at runtime, so a missing API produces a clear message instead of a stack
+-- trace.
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/Fajartya/TyaLin-FishIt/refs/heads/main/dist/payload.lua"
 
-local function fetch()
-    -- Roblox game:HttpGet
-    if type(game) == "table" and type(game.HttpGet) == "function" then
-        local ok, res = pcall(game.HttpGet, game, SCRIPT_URL)
-        if ok and type(res) == "string" and #res > 50 then
-            return res
+local function log(message)
+    print("[TyaLin] " .. tostring(message))
+end
+
+-- The URL can be overridden from the executor console, which is handy when
+-- the release repository moves:
+--   getgenv().TyaLinPayloadUrl = "https://example.com/payload.lua"
+local function resolveUrl()
+    if type(getgenv) == "function" then
+        local ok, shared = pcall(getgenv)
+        if ok and type(shared) == "table" and type(shared.TyaLinPayloadUrl) == "string" then
+            return shared.TyaLinPayloadUrl
         end
     end
+    return SCRIPT_URL
+end
 
-    -- Synapse X
-    if type(syn) == "table" and type(syn.request) == "function" then
-        local ok, res = pcall(syn.request, { Url = SCRIPT_URL, Method = "GET" })
-        if ok and res and type(res.Body) == "string" and #res.Body > 50 then
-            return res.Body
+-- Executors answer in different shapes: some return the body as a string,
+-- others return a table such as
+--   { Success = true, StatusCode = 200, Body = "...", Headers = {...} }
+-- Both are accepted.
+local function extractBody(response)
+    if type(response) == "string" then
+        if #response > 50 then
+            return response
         end
+        return nil
     end
 
-    -- Krnl, Fluxus, Script-Ware, etc
-    if type(request) == "function" then
-        local ok, res = pcall(request, { Url = SCRIPT_URL, Method = "GET" })
-        if ok and res then
-            if type(res.Body) == "string" and #res.Body > 50 then
-                return res.Body
-            end
-            if type(res.body) == "string" and #res.body > 50 then
-                return res.body
-            end
+    if type(response) == "table" then
+        local body = response.Body or response.body or response.Content or response.content
+        if type(body) == "string" and #body > 50 then
+            return body
         end
-    end
-
-    -- http_request
-    if type(http_request) == "function" then
-        local ok, res = pcall(http_request, { Url = SCRIPT_URL, Method = "GET" })
-        if ok and res then
-            if type(res.Body) == "string" and #res.Body > 50 then
-                return res.Body
-            end
-            if type(res.body) == "string" and #res.body > 50 then
-                return res.body
-            end
-        end
-    end
-
-    -- Arceus X / others
-    if type(httpget) == "function" then
-        local ok, res = pcall(httpget, SCRIPT_URL)
-        if ok and type(res) == "string" and #res > 50 then
-            return res
+        local code = response.StatusCode or response.status or response.status_code
+        if type(code) == "number" then
+            log("HTTP status " .. tostring(code))
         end
     end
 
     return nil
 end
 
+local function fetch(url)
+    -- Roblox game:HttpGet (some executors implement it)
+    if type(game) == "table" and type(game.HttpGet) == "function" then
+        local ok, res = pcall(game.HttpGet, game, url)
+        local body = ok and extractBody(res) or nil
+        if body then
+            return body
+        end
+    end
+
+    -- Delta, Fluxus, KRNL, Script-Ware
+    if type(request) == "function" then
+        local ok, res = pcall(request, { Url = url, Method = "GET" })
+        if ok then
+            local body = extractBody(res)
+            if body then
+                return body
+            end
+        end
+    end
+
+    -- Synapse X
+    if type(syn) == "table" and type(syn.request) == "function" then
+        local ok, res = pcall(syn.request, { Url = url, Method = "GET" })
+        if ok then
+            local body = extractBody(res)
+            if body then
+                return body
+            end
+        end
+    end
+
+    -- http_request (Arceus X and others)
+    if type(http_request) == "function" then
+        local ok, res = pcall(http_request, { Url = url, Method = "GET" })
+        if ok then
+            local body = extractBody(res)
+            if body then
+                return body
+            end
+        end
+    end
+
+    -- httpget
+    if type(httpget) == "function" then
+        local ok, res = pcall(httpget, url)
+        local body = ok and extractBody(res) or nil
+        if body then
+            return body
+        end
+    end
+
+    return nil
+end
+
+local function compile(source)
+    if type(loadstring) == "function" then
+        local ok, chunk, err = pcall(loadstring, source)
+        if ok and type(chunk) == "function" then
+            return chunk
+        end
+        log("loadstring failed: " .. tostring(ok and err or chunk))
+    end
+
+    if type(load) == "function" then
+        local ok, chunk, err = pcall(load, source, "=payload")
+        if ok and type(chunk) == "function" then
+            return chunk
+        end
+        log("load failed: " .. tostring(ok and err or chunk))
+    end
+
+    return nil
+end
+
 local function run()
-    if type(loadstring) ~= "function" then
-        warn("[TyaLin] loadstring is unavailable in this executor.")
+    local url = resolveUrl()
+
+    if type(loadstring) ~= "function" and type(load) ~= "function" then
+        log("loadstring is unavailable in this executor.")
         return
     end
 
-    local source = fetch()
+    local source = fetch(url)
     if not source then
-        warn("[TyaLin] Failed to download payload. Try rejoining or using a different executor.")
+        log("Failed to download the payload from " .. url)
+        log("Check your connection, or set getgenv().TyaLinPayloadUrl to a mirror.")
         return
     end
 
-    local compileOk, chunk = pcall(loadstring, source)
-    if not compileOk or type(chunk) ~= "function" then
-        warn("[TyaLin] Failed to compile payload:", tostring(chunk))
+    local chunk = compile(source)
+    if not chunk then
+        log("Failed to compile the payload.")
         return
     end
 
     local runOk, err = pcall(chunk)
     if not runOk then
-        warn("[TyaLin] Runtime error:", tostring(err))
+        log("Runtime error: " .. tostring(err))
     end
 end
 
